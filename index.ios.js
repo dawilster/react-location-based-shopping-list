@@ -10,24 +10,30 @@ import {
   StyleSheet,
   Text,
   View,
-  Alert
+  Alert,
+  Button,
+  NavigatorIOS
 } from 'react-native';
+
 import BackgroundGeolocation from "react-native-background-geolocation";
 import NotificationsIOS from "react-native-notifications";
+
+var Home = require('./Home');
 
 // global.BackgroundGeolocation = BackgroundGeolocation;
 
 export default class ShoppingList extends Component {
 
   componentWillMount() {
+    let here = this;
 
     // This handler fires whenever bgGeo receives a location update.
-    BackgroundGeolocation.on('location', this.onLocation);
+    BackgroundGeolocation.on('location', this.onLocation.bind(this));
 
     // This handler fires when movement states changes (stationary->moving; moving->stationary)
-    BackgroundGeolocation.on('motionchange', this.onMotionChange);
+    BackgroundGeolocation.on('motionchange', this.onMotionChange.bind(this));
 
-    BackgroundGeolocation.on('geofence', this.geoFenceCrossed);
+    BackgroundGeolocation.on('geofence', this.geoFenceCrossed.bind(this));
 
     // Now configure the plugin.
     BackgroundGeolocation.configure({
@@ -38,7 +44,7 @@ export default class ShoppingList extends Component {
       // Activity Recognition
       stopTimeout: 1,
       // Application config
-      debug: true, // <-- enable for debug sounds & notifications
+      debug: false, // <-- enable for debug sounds & notifications
       logLevel: BackgroundGeolocation.LOG_LEVEL_VERBOSE,
       stopOnTerminate: false,   // <-- Allow the background-service to continue tracking when user closes the app.
       startOnBoot: true,        // <-- Auto start tracking when device is powered-up.
@@ -54,6 +60,8 @@ export default class ShoppingList extends Component {
       if (!state.enabled) {
         BackgroundGeolocation.start(function() {
           console.log("- Start success");
+
+          here.addGeofences();
         });
       }
     });
@@ -72,78 +80,92 @@ export default class ShoppingList extends Component {
   }
 
   geoFenceCrossed(params) {
-    Alert.alert(
-      "You're at Shoppers",
-      'My Alert Msg'
-    );
+    if(params.action == 'EXIT') {
+      this.triggerExitNotification();
+    } else {
+      this.triggerEntryNotification();
+    }
   }
 
   addGeofences() {
     let geoFences = [{
-      identifier: "Shoppers #1",
-      radius: 50,
-      latitude: 43.6437499,
-      longitude: -79.4098437,
+      identifier: "shoppers_1",
+      radius: 20,
+      latitude: 43.643050,
+      longitude: -79.406161,
+      notifyOnEntry: true,
+      notifyOnExit: true,
+      notifyOnDwell: true,
+      loiteringDelay: 30000,  // 30 seconds
+    }, {
+      identifier: "shoppers_2",
+      radius: 20,
+      latitude: 43.642053,
+      longitude: -79.411170,
+      notifyOnEntry: true,
+      notifyOnExit: true,
+      notifyOnDwell: true,
+      loiteringDelay: 30000,  // 30 seconds
+    }, {
+      identifier: "citymarket_1",
+      radius: 20,
+      latitude: 43.641530,
+      longitude: -79.415251,
       notifyOnEntry: true,
       notifyOnExit: true,
       notifyOnDwell: true,
       loiteringDelay: 30000,  // 30 seconds
     }];
 
-    NotificationsIOS.localNotification({
-    alertBody: "Local notificiation!",
-    alertTitle: "Local Notification Title",
-    alertAction: "Click here to open",
-    soundName: "chime.aiff",
-    category: "SOME_CATEGORY",
-    userInfo: { }
-});
-
     BackgroundGeolocation.addGeofences(geoFences, function() {
         console.log("Successfully added geofence");
     }, function(error) {
         console.warn("Failed to add geofence", error);
     });
+  }
 
+  triggerExitNotification() {
+    NotificationsIOS.localNotification({
+      alertTitle: "You're leaving Shoppers",
+      alertBody: "Did you make sure to get everything?",
+      alertAction: "Click here to open",
+      soundName: "chime.aiff",
+      category: "SOME_CATEGORY",
+    });
+  }
+
+  triggerEntryNotification() {
+    NotificationsIOS.localNotification({
+      alertTitle: "You just arrived at Shoppers",
+      alertBody: "And have items in your shopping list",
+      alertAction: "Click here to open",
+      soundName: "chime.aiff",
+      category: "SOME_CATEGORY",
+      userInfo: { }
+    });
   }
 
   render() {
-    this.addGeofences();
-
     return (
-      <View style={styles.container}>
-        <Text style={styles.welcome}>
-          Welcome to React Native!
-        </Text>
-        <Text style={styles.instructions}>
-          To get started, edit index.ios.js
-        </Text>
-        <Text style={styles.instructions}>
-          Press Cmd+R to reload,{'\n'}
-          Cmd+D or shake for dev menu
-        </Text>
-      </View>
+      <NavigatorIOS
+        style={styles.container}
+        initialRoute={{
+          title: 'Home',
+          component: Home
+        }}/>
     );
   }
 }
 
-const styles = StyleSheet.create({
+var styles = StyleSheet.create({
+  text: {
+    color: 'black',
+    backgroundColor: 'white',
+    fontSize: 30,
+    margin: 80
+  },
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5FCFF',
-  },
-  welcome: {
-    fontSize: 20,
-    textAlign: 'center',
-    margin: 10,
-  },
-  instructions: {
-    textAlign: 'center',
-    color: '#333333',
-    marginBottom: 5,
-  },
+  }
 });
-
 AppRegistry.registerComponent('ShoppingList', () => ShoppingList);

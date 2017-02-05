@@ -32,6 +32,15 @@
   rootViewController.view = rootView;
   self.window.rootViewController = rootViewController;
   [self.window makeKeyAndVisible];
+
+  if ([UIApplication instancesRespondToSelector:@selector(registerUserNotificationSettings:)]){
+      [application registerUserNotificationSettings: [
+        UIUserNotificationSettings settingsForTypes:UIUserNotificationTypeAlert|
+                                                    UIUserNotificationTypeBadge|
+                                                    UIUserNotificationTypeSound 
+                                    categories:nil]];
+  }
+
   return YES;
 }
 
@@ -59,6 +68,9 @@
 - (void)application:(UIApplication *)application didReceiveLocalNotification:(UILocalNotification *)notification
 {
   [RNNotifications didReceiveLocalNotification:notification];
+
+  printf("Received Local Notification");
+
 }
 
 @end
