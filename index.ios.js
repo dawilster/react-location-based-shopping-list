@@ -12,7 +12,9 @@ import {
   View,
   Alert,
   Button,
-  NavigatorIOS
+  NavigatorIOS,
+  AsyncStorage,
+  AppState
 } from 'react-native';
 
 import BackgroundGeolocation from "react-native-background-geolocation";
@@ -23,13 +25,20 @@ var Home = require('./Home');
 // global.BackgroundGeolocation = BackgroundGeolocation;
 
 export default class ShoppingList extends Component {
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      openedAppRecently: false,
+      lastCrossed: null
+    };
+  }
 
   componentWillMount() {
-    let here = this;
+    AppState.addEventListener('change', this._handleAppStateChange.bind(this));
 
     // This handler fires whenever bgGeo receives a location update.
     BackgroundGeolocation.on('location', this.onLocation.bind(this));
-
     // This handler fires when movement states changes (stationary->moving; moving->stationary)
     BackgroundGeolocation.on('motionchange', this.onMotionChange.bind(this));
 
@@ -41,6 +50,7 @@ export default class ShoppingList extends Component {
       desiredAccuracy: 0,
       stationaryRadius: 25,
       distanceFilter: 10,
+      locationUpdateInterval: 10000, //active location updates in ms
       // Activity Recognition
       stopTimeout: 1,
       // Application config
@@ -54,15 +64,17 @@ export default class ShoppingList extends Component {
       params: {               // <-- Optional HTTP params
         "auth_token": "maybe_your_server_authenticates_via_token_YES?"
       }
-    }, function(state) {
+    }, (state) => {
       console.log("- BackgroundGeolocation is configured and ready: ", state.enabled);
 
       if (!state.enabled) {
-        BackgroundGeolocation.start(function() {
+        BackgroundGeolocation.start(() => {
           console.log("- Start success");
 
-          here.addGeofences();
+          this.addGeofences();
         });
+      } else {
+        this.addGeofences();
       }
     });
   }
@@ -71,6 +83,7 @@ export default class ShoppingList extends Component {
     // Remove BackgroundGeolocation listeners
     BackgroundGeolocation.un('location', this.onLocation);
     BackgroundGeolocation.un('motionchange', this.onMotionChange);
+    AppState.removeEventListener('change', this._handleAppStateChange);
   }
   onLocation(location) {
     console.log('- [js]location: ', JSON.stringify(location));
@@ -81,74 +94,123 @@ export default class ShoppingList extends Component {
 
   geoFenceCrossed(params) {
     if(params.action == 'EXIT') {
-      this.triggerExitNotification();
+      //opene recently or crossed geoFence greater than 5 minutes ago
+      if(this.state.openedAppRecently ||
+          (this.state.lastCrossed != null &&
+          this.state.lastCrossed <= (Date.now() - (5 * 60)))) {
+        this.triggerExitNotification();
+
+        this.setState({ openedAppRecently: false });
+      } else {
+        NotificationsIOS.cancelAllLocalNotifications();
+      }
     } else {
+      this.setState({ lastCrossed: Date.now()});
+
       this.triggerEntryNotification();
+
+      this.scheduleDwellNotification();
+    }
+  }
+
+  _buildGooglePlacesUrl(lat, lng) {
+    let url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
+
+    url += '?location=' + lat + ',' + lng;
+    url += '&rankby=distance';
+    url += '&keyword=shoppers drug mart';
+    url += '&key=AIzaSyA7zAbta-8Bnu--NoJr3AkR--NOZuE1JY0'
+
+    return url;
+  }
+
+  _handleAppStateChange(currentAppState) {
+    console.log("AppState: " + currentAppState);
+    console.log("lastCrossed: " + this.state.lastCrossed);
+    //basically if the app had been opened within 10 minutes of crossing
+    //a geoFence
+    if(currentAppState === 'active' &&
+        this.state.lastCrossed != null &&
+        this.state.lastCrossed >= (Date.now() - (10 * 60))) {
+
+      this.setState({ openedAppRecently: true });
     }
   }
 
   addGeofences() {
-    let geoFences = [{
-      identifier: "shoppers_1",
-      radius: 20,
-      latitude: 43.643050,
-      longitude: -79.406161,
-      notifyOnEntry: true,
-      notifyOnExit: true,
-      notifyOnDwell: true,
-      loiteringDelay: 30000,  // 30 seconds
-    }, {
-      identifier: "shoppers_2",
-      radius: 20,
-      latitude: 43.642053,
-      longitude: -79.411170,
-      notifyOnEntry: true,
-      notifyOnExit: true,
-      notifyOnDwell: true,
-      loiteringDelay: 30000,  // 30 seconds
-    }, {
-      identifier: "citymarket_1",
-      radius: 20,
-      latitude: 43.641530,
-      longitude: -79.415251,
-      notifyOnEntry: true,
-      notifyOnExit: true,
-      notifyOnDwell: true,
-      loiteringDelay: 30000,  // 30 seconds
-    }];
 
-    BackgroundGeolocation.addGeofences(geoFences, function() {
-        console.log("Successfully added geofence");
-    }, function(error) {
-        console.warn("Failed to add geofence", error);
+    BackgroundGeolocation.getCurrentPosition({
+      persist: true,
+      timeout: 30,      // 30 second timeout to fetch location
+      samples: 5,       // Fetch maximum 5 location samples
+      maximumAge: 5000, // Accept the last-known-location if not older than 5000 ms.
+      desiredAccuracy: 10  // Fetch a location with a minimum accuracy of `10` meters.
+    }, (location) => {
+      fetch(this._buildGooglePlacesUrl(location.coords.latitude, location.coords.longitude), {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        }
+      }).then((response) => response.json())
+      .then((json) => {
+        console.log('building places objects');
+        let geoFences = json.results.map(this.buildGeoObject);
+
+        BackgroundGeolocation.addGeofences(geoFences, function() {
+            console.log("Successfully added geofences");
+        }, function(error) {
+            console.warn("Failed to add geofences", error);
+        });
+      });
+    }, function(errorCode) {
+        alert('A location error occurred: ' + errorCode);
     });
+
+  }
+
+  buildGeoObject(place) {
+    return {
+      identifier: place.name + ' - ' + place.vicinity,
+      radius: 10,
+      latitude: place.geometry.location.lat,
+      longitude: place.geometry.location.lng,
+      notifyOnEntry: true,
+      notifyOnExit: true,
+      notifyOnDwell: false,
+    }
   }
 
   triggerExitNotification() {
     NotificationsIOS.localNotification({
-      alertTitle: "You're leaving Shoppers",
-      alertBody: "Did you make sure to get everything?",
+      alertTitle: "Leaving so soon?",
+      alertBody: "Just wanted to make sure you got everything :)",
       alertAction: "Click here to open",
-      soundName: "chime.aiff",
-      category: "SOME_CATEGORY",
+    });
+  }
+
+  scheduleDwellNotification() {
+    //5 minutes from now
+    NotificationsIOS.localNotification({
+      fireDate: new Date(Date.now() + (300 * 1000)).toISOString(),
+      alertTitle: "Got everything?",
+      alertBody: "Just making sure you don't forget anything",
+      alertAction: "Click here to open",
     });
   }
 
   triggerEntryNotification() {
     NotificationsIOS.localNotification({
-      alertTitle: "You just arrived at Shoppers",
-      alertBody: "And have items in your shopping list",
+      alertTitle: "Hey! Looks like you're near a Shoppers",
+      alertBody: "If you are, you have items in your Shopping list",
       alertAction: "Click here to open",
-      soundName: "chime.aiff",
-      category: "SOME_CATEGORY",
-      userInfo: { }
     });
   }
 
   render() {
     return (
       <NavigatorIOS
-        style={styles.container}
+        style={{flex: 1}}
         initialRoute={{
           title: 'Home',
           component: Home
@@ -156,16 +218,4 @@ export default class ShoppingList extends Component {
     );
   }
 }
-
-var styles = StyleSheet.create({
-  text: {
-    color: 'black',
-    backgroundColor: 'white',
-    fontSize: 30,
-    margin: 80
-  },
-  container: {
-    flex: 1,
-  }
-});
 AppRegistry.registerComponent('ShoppingList', () => ShoppingList);

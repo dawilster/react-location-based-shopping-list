@@ -1,0 +1,3 @@
+# React Native Geolocation Shopping List App
+
+In Toronto there are these Shoppers stores everywhere. They're basically as prolific as 7/11s in other countries. On every corner. Except they're actually awesome and sell proper groceries. Anyway I'm always forgetting to buy things while I'm in there so I built an app to remind me whenever I'm near a Shoppers to open my shopping list. Using geofences I'm able to determine whenever I enter and leave a Shoppers anywhere in Toronto.

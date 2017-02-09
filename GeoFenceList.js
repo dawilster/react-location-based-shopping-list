@@ -15,8 +15,6 @@ class GeoFenceList extends Component {
     super(props);
     const ds = new ListView.DataSource({rowHasChanged: (r1, r2) => r1 !== r2});
 
-    console.log(this.props.geoFences);
-
     this.state = {
       dataSource: ds.cloneWithRows(this.props.geoFences)
     };
@@ -24,9 +22,9 @@ class GeoFenceList extends Component {
 
   renderRow(rowData, sectionID, rowID) {
     return (
-        <View>
-          <Text>{rowData.identifier}</Text>
-        </View>
+      <View>
+        <Text>{rowData.identifier}</Text>
+      </View>
     );
   }
 
